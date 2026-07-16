@@ -132,21 +132,34 @@ def format_output(arr, low_set, total):
     tr = timezone(timedelta(hours=3))
     tarih = datetime.now(tr).strftime("%d.%m.%Y")
     total_str = f"{total:,}".replace(",", ".")
+
+    # Sayilari 5'er 5'er satirlara bol; ozel (baraj) sayilari kalin yaz.
+    row = []
+    number_lines = []
+    for v in arr:
+        cell = f"<b>{v}</b>" if v in low_set else str(v)
+        row.append(cell)
+        if len(row) == 5:
+            number_lines.append(", ".join(row))
+            row = []
+    if row:
+        number_lines.append(", ".join(row))
+
     lines = [
-        f"Gunluk Sayi Kombinasyonu ({tarih})",
+        f"<b>Gunluk Sayi Kombinasyonu ({tarih})</b>",
         "",
         "Sayi listesi:",
-        ", ".join(str(x) for x in arr),
+        "\n".join(number_lines),
         "",
-        f"Toplam deger: {total_str}",
+        f"Toplam deger: <b>{total_str}</b>",
         f"Kullanilan sayi adedi: {len(arr)}",
         "",
-        "Kademe gecis siralari:",
-        f"  300.000 -> {cross[300000]}. sayida",
-        f"  350.000 -> {cross[350000]}. sayida",
-        f"  400.000 -> {cross[400000]}. sayida",
+        "<b>Kademe gecis siralari:</b>",
+        f"  <b>300.000</b> -> {cross[300000]}. sayida",
+        f"  <b>350.000</b> -> {cross[350000]}. sayida",
+        f"  <b>400.000</b> -> {cross[400000]}. sayida",
         "",
-        f"Ozel 10.000-10.900 araligindaki iki sayi: {lows[0]}, {lows[1]}",
+        f"Ozel 10.000-10.900 araligindaki iki sayi: <b>{lows[0]}</b>, <b>{lows[1]}</b>",
     ]
     return "\n".join(lines)
 
@@ -157,7 +170,9 @@ def send_telegram(text):
     if not token or not chat_id:
         raise RuntimeError("TELEGRAM_BOT_TOKEN veya TELEGRAM_CHAT_ID tanimli degil.")
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    data = json.dumps({"chat_id": chat_id, "text": text}).encode("utf-8")
+    data = json.dumps(
+        {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+    ).encode("utf-8")
     req = urllib.request.Request(
         url, data=data, headers={"Content-Type": "application/json"}
     )
