@@ -133,12 +133,11 @@ def format_output(arr, low_set, total):
     tarih = datetime.now(tr).strftime("%d.%m.%Y")
     total_str = f"{total:,}".replace(",", ".")
 
-    # Sayilari 5'er 5'er satirlara bol; ozel (baraj) sayilari kalin yaz.
+    # Sayilari 5'er 5'er satirlara bol.
     row = []
     number_lines = []
     for v in arr:
-        cell = f"<b>{v}</b>" if v in low_set else str(v)
-        row.append(cell)
+        row.append(str(v))
         if len(row) == 5:
             number_lines.append(", ".join(row))
             row = []
@@ -146,20 +145,20 @@ def format_output(arr, low_set, total):
         number_lines.append(", ".join(row))
 
     lines = [
-        f"<b>Gunluk Sayi Kombinasyonu ({tarih})</b>",
+        f"Gunluk Sayi Kombinasyonu ({tarih})",
         "",
         "Sayi listesi:",
         "\n".join(number_lines),
         "",
-        f"Toplam deger: <b>{total_str}</b>",
+        f"Toplam deger: {total_str}",
         f"Kullanilan sayi adedi: {len(arr)}",
         "",
-        "<b>Kademe gecis siralari:</b>",
-        f"  <b>300.000</b> -> {cross[300000]}. sayida",
-        f"  <b>350.000</b> -> {cross[350000]}. sayida",
-        f"  <b>400.000</b> -> {cross[400000]}. sayida",
+        "Kademe gecis siralari:",
+        f"  <b>300.000 -> {cross[300000]}. sayida</b>",
+        f"  <b>350.000 -> {cross[350000]}. sayida</b>",
+        f"  <b>400.000 -> {cross[400000]}. sayida</b>",
         "",
-        f"Ozel 10.000-10.900 araligindaki iki sayi: <b>{lows[0]}</b>, <b>{lows[1]}</b>",
+        f"Ozel 10.000-10.900 araligindaki iki sayi: {lows[0]}, {lows[1]}",
     ]
     return "\n".join(lines)
 
