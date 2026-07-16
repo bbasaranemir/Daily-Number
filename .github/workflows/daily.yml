@@ -1,0 +1,25 @@
+name: Gunluk Sayi Kombinasyonu
+
+on:
+  schedule:
+    # 04:50 UTC = 07:50 Turkiye (UTC+3), Pazartesi-Cumartesi (Pazar haric)
+    - cron: "50 4 * * 1-6"
+  workflow_dispatch: {}   # elle "Run workflow" ile de calistirilabilir
+
+jobs:
+  gonder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Depoyu al
+        uses: actions/checkout@v4
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Uret ve Telegram'a gonder
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python gunluk_sayi.py
