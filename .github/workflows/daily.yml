@@ -1,10 +1,13 @@
 name: Gunluk Sayi Kombinasyonu
 
 on:
-  schedule:
-    # 04:50 UTC = 07:50 Turkiye (UTC+3), Pazartesi-Cumartesi (Pazar haric)
-    - cron: "50 4 * * 1-6"
-  workflow_dispatch: {}   # elle "Run workflow" ile de calistirilabilir
+  # Zamanlama disaridan cron-job.org ile tam 07.30'da tetiklenir.
+  # GitHub'in kendi cron'u gecikmeli oldugu icin kullanilmiyor.
+  workflow_dispatch: {}   # elle veya API ile tetiklenir
+
+# Arsiv dosyasini depoya geri yazabilmek icin yazma izni.
+permissions:
+  contents: write
 
 jobs:
   gonder:
@@ -23,3 +26,26 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python gunluk_sayi.py
+
+      # Mesaj gonderildikten sonra gunun sonucunu arsive kaydet.
+      # Bu adim basarisiz olsa bile mesaj zaten gonderilmis olur.
+      - name: Arsivi kaydet
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add gecmis.jsonl || true
+          git commit -m "Arsiv guncellendi: $(date -u +%F)" || echo "degisiklik yok"
+          git push || echo "push atlandi"
+
+      # Yukaridaki adimlardan biri hata verirse Telegram'dan uyar.
+      - name: Hata bildirimi
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=UYARI: Gunluk sayi botu bugun calisirken bir hata olustu. GitHub -> Actions loglarini kontrol et." \
+            > /dev/null

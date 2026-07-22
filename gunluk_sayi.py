@@ -19,12 +19,18 @@ from datetime import datetime, timezone, timedelta
 STEP = 10
 LOW_MIN, LOW_MAX = 10000, 10900      # ozel aralik (tam 2 sayi)
 HIGH_MIN, HIGH_MAX = 10910, 11900    # geri kalan
-TARGET = 500000                      # hedef toplam (altina dusmez)
-TARGET_MAX = 560000                  # ustunde kalabilecegi tavan
-LEVELS = [300000, 400000, 500000]    # kademe gecis seviyeleri
+TARGET_CENTER = 500000               # ideal orta nokta (450k-550k araligi)
+GEN_MIN = 465000                     # uretim alt siniri: 450.000'i rahat gecsin
+GEN_MAX = 540000                     # uretim ust siniri: 550.000'in guvenle altinda
+HARD_MIN = 450000                    # kesin alt sinir (altina asla dusmez)
+HARD_MAX = 550000                    # kesin ust sinir (ustune asla cikmaz)
+LEVELS = [300000, 400000, 450000]    # kademe gecis seviyeleri
 
 LOW_POOL = list(range(LOW_MIN, LOW_MAX + 1, STEP))
 HIGH_POOL = list(range(HIGH_MIN, HIGH_MAX + 1, STEP))
+
+# Gecmis (arsiv + tekrar onleme) dosyasi. Depo kokunde tutulur.
+HISTORY_FILE = os.environ.get("HISTORY_FILE", "gecmis.jsonl")
 
 
 def hundred_bucket(n):
@@ -124,7 +130,7 @@ def spread_score(arr):
 def build_candidate():
     lows = random.sample(LOW_POOL, 2)
     low_sum = sum(lows)
-    need_min = TARGET - low_sum
+    need_min = GEN_MIN - low_sum
     # highs icin gereken en az adet (buyuk sayilarla)
     sorted_desc = sorted(HIGH_POOL, reverse=True)
     k = 1
@@ -139,7 +145,7 @@ def build_candidate():
         for _ in range(40):
             highs = random.sample(HIGH_POOL, count)
             total = low_sum + sum(highs)
-            if total < TARGET or total > TARGET_MAX:
+            if total < GEN_MIN or total > GEN_MAX:
                 continue
             arranged = arrange(lows + highs, set(lows))
             if arranged is None:
@@ -157,7 +163,7 @@ def generate(num_candidates=700):
             continue
         arr, low_set, total = c
         sp = spread_score(arr)
-        closeness = -(total - TARGET) / 1000.0   # 500.000'e yakinlik
+        closeness = -abs(total - TARGET_CENTER) / 1000.0   # merkeze yakinlik
         count_pen = -len(arr) * 0.8              # az adet hafif tercih
         key = (round(sp + closeness + count_pen, 3),)
         if best_key is None or key > best_key:
@@ -190,8 +196,10 @@ def validate(arr, low_set, total):
         errs.append("ozel aralik sayisi != 2")
     if arr[0] in low_set or arr[-1] in low_set:
         errs.append("ozel sayi ilk/son sirada")
-    if total < TARGET:
-        errs.append(f"toplam < {TARGET}")
+    if total < HARD_MIN:
+        errs.append(f"toplam < {HARD_MIN}")
+    if total > HARD_MAX:
+        errs.append(f"toplam > {HARD_MAX}")
     for i in range(1, len(arr)):
         if hundred_bucket(arr[i]) == hundred_bucket(arr[i - 1]):
             errs.append("ayni yuzluk dilim ardisik")
@@ -239,9 +247,7 @@ def format_output(arr, low_set, total):
         f"Kullanilan sayi adedi: {len(arr)}",
         "",
         "Kademe gecis siralari:",
-        lvl_line(300000),
-        lvl_line(400000),
-        lvl_line(500000),
+        *[lvl_line(lvl) for lvl in LEVELS],
         "",
         f"Ozel 10.000-10.900 araligindaki iki sayi: {lows[0]}, {lows[1]}",
     ]
@@ -264,20 +270,90 @@ def send_telegram(text):
         return resp.read().decode("utf-8")
 
 
-def build_message():
-    best = None
-    for _ in range(5):  # gecerli sonuc gelene kadar yeniden uret
+def signature(arr):
+    """Ayni sayi kumesi ayni imzayi verir (sira onemsiz)."""
+    return ",".join(str(x) for x in sorted(arr))
+
+
+def load_history():
+    """Gecmis imzalarini oku. Dosya yok/bozuksa bos don (sistemi bozmaz)."""
+    sigs = set()
+    try:
+        if os.path.exists(HISTORY_FILE):
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                        sigs.add(signature(rec["sayilar"]))
+                    except Exception:
+                        continue
+    except Exception:
+        pass
+    return sigs
+
+
+def append_history(arr, total):
+    """Gunun sonucunu arsive ekle. Hata olursa sessizce gec (mesaj gitti)."""
+    try:
+        tr = timezone(timedelta(hours=3))
+        rec = {
+            "tarih": datetime.now(tr).strftime("%Y-%m-%d"),
+            "toplam": total,
+            "adet": len(arr),
+            "sayilar": list(arr),
+        }
+        with open(HISTORY_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        return True
+    except Exception:
+        return False
+
+
+def produce(history_sigs, max_tries=80):
+    """
+    Gecerli VE gecmiste olmayan bir kombinasyon uret.
+    Benzersiz bulunamazsa son gecerli sonucu don (sistem asla bos kalmaz).
+    """
+    fallback = None
+    for _ in range(max_tries):
         best = generate()
         if best is None:
             continue
         arr, low_set, total = best
-        if not validate(arr, low_set, total):
-            return format_output(arr, low_set, total)
-    return "Uygun kombinasyon uretilemedi, tekrar denenecek."
+        if validate(arr, low_set, total):
+            continue
+        fallback = (arr, low_set, total)
+        if signature(arr) not in history_sigs:
+            return (arr, low_set, total), True
+    return fallback, False
+
+
+def build_message():
+    """Test/onizleme icin: gecmis olmadan tek mesaj uretir."""
+    res, _ = produce(set())
+    if res is None:
+        return "Uygun kombinasyon uretilemedi."
+    arr, low_set, total = res
+    return format_output(arr, low_set, total)
 
 
 if __name__ == "__main__":
-    message = build_message()
-    print(message)
-    send_telegram(message)
-    print("\n[OK] Telegram'a gonderildi.")
+    history_sigs = load_history()
+    res, unique = produce(history_sigs)
+    if res is None:
+        message = "Uygun kombinasyon uretilemedi, yarin tekrar denenecek."
+        print(message)
+        send_telegram(message)
+    else:
+        arr, low_set, total = res
+        message = format_output(arr, low_set, total)
+        print(message)
+        if not unique:
+            print("[UYARI] Benzersiz kombinasyon bulunamadi, gecerli sonuc gonderiliyor.")
+        send_telegram(message)
+        if append_history(arr, total):
+            print("[OK] Arsive eklendi:", HISTORY_FILE)
+    print("[OK] Telegram'a gonderildi.")
