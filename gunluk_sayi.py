@@ -19,9 +19,10 @@ from datetime import datetime, timezone, timedelta
 STEP = 10
 LOW_MIN, LOW_MAX = 10000, 10900      # ozel aralik (tam 2 sayi)
 HIGH_MIN, HIGH_MAX = 10910, 11900    # geri kalan
-TARGET_CENTER = 500000               # ideal orta nokta (450k-550k araligi)
-GEN_MIN = 465000                     # uretim alt siniri: 450.000'i rahat gecsin
-GEN_MAX = 540000                     # uretim ust siniri: 550.000'in guvenle altinda
+# Her gun toplam hedefi bu aralikta RASTGELE secilir -> her gun farkli
+# toplam ve farkli sayi adedi -> cikti tamamen rastgele gorunur.
+DAILY_MIN = 455000                   # gunluk rastgele hedef alt (450k'yi rahat gecer)
+DAILY_MAX = 545000                   # gunluk rastgele hedef ust (550k'nin altinda)
 HARD_MIN = 450000                    # kesin alt sinir (altina asla dusmez)
 HARD_MAX = 550000                    # kesin ust sinir (ustune asla cikmaz)
 LEVELS = [300000, 400000, 450000]    # kademe gecis seviyeleri
@@ -127,25 +128,23 @@ def spread_score(arr):
     return s
 
 
-def build_candidate():
+HIGH_AVG = sum(HIGH_POOL) / len(HIGH_POOL)   # ~11405
+
+
+def build_candidate(target):
+    """Toplami 'target'a yakin (450k-550k icinde) bir kombinasyon uret."""
     lows = random.sample(LOW_POOL, 2)
     low_sum = sum(lows)
-    need_min = GEN_MIN - low_sum
-    # highs icin gereken en az adet (buyuk sayilarla)
-    sorted_desc = sorted(HIGH_POOL, reverse=True)
-    k = 1
-    running = 0
-    for i, v in enumerate(sorted_desc, start=1):
-        running += v
-        if running >= need_min:
-            k = i
-            break
-    # min adet ve birkac fazlasini dene (dagilim icin biraz esneklik)
-    for count in range(k, min(k + 6, len(HIGH_POOL)) + 1):
+    need = target - low_sum
+    est = max(1, round(need / HIGH_AVG))
+    # hedefe gore degisen sayi adedi -> her gun farkli adet
+    for count in range(max(1, est - 2), min(est + 4, len(HIGH_POOL)) + 1):
         for _ in range(40):
             highs = random.sample(HIGH_POOL, count)
             total = low_sum + sum(highs)
-            if total < GEN_MIN or total > GEN_MAX:
+            if not (HARD_MIN <= total <= HARD_MAX):
+                continue
+            if abs(total - target) > 7000:
                 continue
             arranged = arrange(lows + highs, set(lows))
             if arranged is None:
@@ -154,18 +153,18 @@ def build_candidate():
     return None
 
 
-def generate(num_candidates=700):
+def generate(target, num_candidates=300):
+    """Verilen hedefe yakin, en dengeli/rastgele gorunumlu adayi sec."""
     best = None
     best_key = None
     for _ in range(num_candidates):
-        c = build_candidate()
+        c = build_candidate(target)
         if c is None:
             continue
         arr, low_set, total = c
         sp = spread_score(arr)
-        closeness = -abs(total - TARGET_CENTER) / 1000.0   # merkeze yakinlik
-        count_pen = -len(arr) * 0.8              # az adet hafif tercih
-        key = (round(sp + closeness + count_pen, 3),)
+        closeness = -abs(total - target) / 1000.0   # gunun hedefine yakinlik
+        key = (round(sp + closeness, 3),)
         if best_key is None or key > best_key:
             best_key = key
             best = (arr, low_set, total)
@@ -312,14 +311,17 @@ def append_history(arr, total):
         return False
 
 
-def produce(history_sigs, max_tries=80):
+def produce(history_sigs, max_tries=50):
     """
     Gecerli VE gecmiste olmayan bir kombinasyon uret.
+    Her denemede gunun hedefi 455k-545k arasinda RASTGELE secilir ->
+    her gun farkli toplam ve farkli sayi adedi (tamamen rastgele gorunum).
     Benzersiz bulunamazsa son gecerli sonucu don (sistem asla bos kalmaz).
     """
     fallback = None
     for _ in range(max_tries):
-        best = generate()
+        target = random.randint(DAILY_MIN, DAILY_MAX)
+        best = generate(target)
         if best is None:
             continue
         arr, low_set, total = best
