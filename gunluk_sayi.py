@@ -21,11 +21,11 @@ LOW_MIN, LOW_MAX = 10000, 10900      # ozel aralik (tam 2 sayi)
 HIGH_MIN, HIGH_MAX = 10910, 11900    # geri kalan
 # Her gun toplam hedefi bu aralikta RASTGELE secilir -> her gun farkli
 # toplam ve farkli sayi adedi -> cikti tamamen rastgele gorunur.
-DAILY_MIN = 455000                   # gunluk rastgele hedef alt (450k'yi rahat gecer)
-DAILY_MAX = 545000                   # gunluk rastgele hedef ust (550k'nin altinda)
-HARD_MIN = 450000                    # kesin alt sinir (altina asla dusmez)
-HARD_MAX = 550000                    # kesin ust sinir (ustune asla cikmaz)
-LEVELS = [300000, 400000, 450000]    # kademe gecis seviyeleri
+DAILY_MIN = 410000                   # gunluk rastgele hedef alt (400k'yi rahat gecer)
+DAILY_MAX = 590000                   # gunluk rastgele hedef ust (600k'nin altinda)
+HARD_MIN = 400000                    # kesin alt sinir (altina asla dusmez)
+HARD_MAX = 600000                    # kesin ust sinir (ustune asla cikmaz)
+LEVELS = [300000, 400000, 500000]    # kademe gecis seviyeleri
 
 LOW_POOL = list(range(LOW_MIN, LOW_MAX + 1, STEP))
 HIGH_POOL = list(range(HIGH_MIN, HIGH_MAX + 1, STEP))

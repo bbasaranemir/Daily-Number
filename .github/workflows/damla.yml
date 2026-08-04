@@ -1,0 +1,46 @@
+name: Damla Sayi (gun ici)
+
+on:
+  # cron-job.org tarafindan dakikada bir tetiklenir (08:00-18:00 TR).
+  workflow_dispatch: {}
+
+# Durum dosyasini (damla_durum.json) geri yazabilmek icin yazma izni.
+permissions:
+  contents: write
+
+# Ayni anda birden fazla calisma olmasin (durum yarisi olmasin).
+concurrency:
+  group: damla-sayi
+  cancel-in-progress: false
+
+jobs:
+  damla:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Depoyu al
+        uses: actions/checkout@v4
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Sirdaki sayiyi gonder (vakti geldiyse)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python damla.py
+
+      - name: Durumu kaydet
+        if: success()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain damla_durum.json)" ]; then
+            git add damla_durum.json
+            git commit -m "Damla durum: $(date -u +%FT%TZ)"
+            git pull --rebase --autostash origin main || true
+            git push || echo "push atlandi"
+          else
+            echo "degisiklik yok"
+          fi
