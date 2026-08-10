@@ -1,0 +1,40 @@
+name: Haftalik / Aylik Rapor
+
+on:
+  schedule:
+    - cron: "0 16 * * 0"   # her Pazar 19:00 TR -> haftalik rapor
+    - cron: "0 6 1 * *"    # her ayin 1'i 09:00 TR -> aylik rapor
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Elle calistirma icin: hafta veya ay"
+        default: "hafta"
+
+jobs:
+  rapor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Depoyu al
+        uses: actions/checkout@v4
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Raporu uret ve gonder
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            if [ "${{ github.event.schedule }}" = "0 6 1 * *" ]; then
+              MODE=ay
+            else
+              MODE=hafta
+            fi
+          else
+            MODE="${{ github.event.inputs.mode }}"
+          fi
+          echo "Rapor modu: $MODE"
+          python rapor.py "$MODE"
