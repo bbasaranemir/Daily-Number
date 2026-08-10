@@ -25,7 +25,17 @@ DAILY_MIN = 410000                   # gunluk rastgele hedef alt (400k'yi rahat 
 DAILY_MAX = 590000                   # gunluk rastgele hedef ust (600k'nin altinda)
 HARD_MIN = 400000                    # kesin alt sinir (altina asla dusmez)
 HARD_MAX = 600000                    # kesin ust sinir (ustune asla cikmaz)
-LEVELS = [300000, 400000, 500000]    # kademe gecis seviyeleri
+LEVELS = [300000, 400000, 500000]    # hafta ici kademe gecis seviyeleri
+
+# CUMARTESI: kisa pencere (09:10-13:45), ~12-15 dk arayla ~20 sayi sigar.
+# Bu yuzden az sayi uretilir; toplam dogal olarak dusuk olur (400-600k kurali
+# cumartesi UYGULANMAZ).
+SAT_COUNT_MIN, SAT_COUNT_MAX = 17, 19
+LEVELS_SAT = [100000, 150000, 200000]  # cumartesi kademe seviyeleri
+
+
+def is_saturday():
+    return datetime.now(timezone(timedelta(hours=3))).weekday() == 5
 
 LOW_POOL = list(range(LOW_MIN, LOW_MAX + 1, STEP))
 HIGH_POOL = list(range(HIGH_MIN, HIGH_MAX + 1, STEP))
@@ -171,19 +181,32 @@ def generate(target, num_candidates=300):
     return best
 
 
-def level_positions(arr):
+def build_saturday():
+    """Cumartesi icin ~20 sayilik kombinasyon (400-600k kurali yok)."""
+    for _ in range(300):
+        count = random.randint(SAT_COUNT_MIN, SAT_COUNT_MAX)
+        lows = random.sample(LOW_POOL, 2)
+        highs = random.sample(HIGH_POOL, count - 2)
+        arranged = arrange(lows + highs, set(lows))
+        if arranged is None:
+            continue
+        return arranged, set(lows), sum(arranged)
+    return None
+
+
+def level_positions(arr, levels):
     """Her seviye icin (sira, sayi) don."""
     running = 0
-    res = {lvl: None for lvl in LEVELS}
+    res = {lvl: None for lvl in levels}
     for idx, v in enumerate(arr, start=1):
         running += v
-        for lvl in LEVELS:
+        for lvl in levels:
             if res[lvl] is None and running >= lvl:
                 res[lvl] = (idx, v)
     return res
 
 
-def validate(arr, low_set, total):
+def validate(arr, low_set, total, check_sum=True):
     errs = []
     if any(x % 10 != 0 for x in arr):
         errs.append("10'un kati degil")
@@ -195,10 +218,11 @@ def validate(arr, low_set, total):
         errs.append("ozel aralik sayisi != 2")
     if arr[0] in low_set or arr[-1] in low_set:
         errs.append("ozel sayi ilk/son sirada")
-    if total < HARD_MIN:
-        errs.append(f"toplam < {HARD_MIN}")
-    if total > HARD_MAX:
-        errs.append(f"toplam > {HARD_MAX}")
+    if check_sum:
+        if total < HARD_MIN:
+            errs.append(f"toplam < {HARD_MIN}")
+        if total > HARD_MAX:
+            errs.append(f"toplam > {HARD_MAX}")
     for i in range(1, len(arr)):
         if hundred_bucket(arr[i]) == hundred_bucket(arr[i - 1]):
             errs.append("ayni yuzluk dilim ardisik")
@@ -208,7 +232,8 @@ def validate(arr, low_set, total):
 
 def format_output(arr, low_set, total):
     lows = sorted(x for x in arr if x in low_set)
-    lv = level_positions(arr)
+    levels = LEVELS_SAT if is_saturday() else LEVELS
+    lv = level_positions(arr, levels)
     # kademe gecisinin gerceklestigi 1-indeksli siralar (listede kalin olacak)
     bold_idx = set(pos[0] for pos in lv.values() if pos is not None)
 
@@ -246,7 +271,7 @@ def format_output(arr, low_set, total):
         f"Kullanilan sayi adedi: {len(arr)}",
         "",
         "Kademe gecis siralari:",
-        *[lvl_line(lvl) for lvl in LEVELS],
+        *[lvl_line(lvl) for lvl in levels],
         "",
         f"Ozel 10.000-10.900 araligindaki iki sayi: {lows[0]}, {lows[1]}",
     ]
@@ -319,13 +344,18 @@ def produce(history_sigs, max_tries=50):
     Benzersiz bulunamazsa son gecerli sonucu don (sistem asla bos kalmaz).
     """
     fallback = None
+    sat = is_saturday()
     for _ in range(max_tries):
-        target = random.randint(DAILY_MIN, DAILY_MAX)
-        best = generate(target)
+        if sat:
+            best = build_saturday()
+            check_sum = False
+        else:
+            best = generate(random.randint(DAILY_MIN, DAILY_MAX))
+            check_sum = True
         if best is None:
             continue
         arr, low_set, total = best
-        if validate(arr, low_set, total):
+        if validate(arr, low_set, total, check_sum=check_sum):
             continue
         fallback = (arr, low_set, total)
         if signature(arr) not in history_sigs:
